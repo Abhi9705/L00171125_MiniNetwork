@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: This is IaC Project, first creating an EC2 Instance
+Parameters:
+   dbInstanceClass:
+    Default: db.t2.micro
+    Description: DB instance class
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type. 
+
+   DBAllocatedStorage:
+    Default: '8'
+    Description: The size of the database (GiB)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '20'
+    ConstraintDescription: must be between 05 and 20 GiB.
+
+   DBUsername:
+    Description: Username for MySQL database access
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain on
+
+   DBPassword:
+    NoEcho: 'true'
+    Description: Password MySQL database access
+    Type: String
+    MinLength: '04'
+    MaxLength: '15'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric character
+
+   Environment:
+      Type: String
+      AllowedValues: [ Testing environment, Production environment ]
+
+Conditions:
+     EnvironmentIsProduction: !Equals [ !Ref Environment, Production environment ]
+
+Resources:
+   InitialiseVPC:
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: 10.0.0.0/16
+
+   myInternetGateway: 
+        Type: AWS::EC2::InternetGateway             
+
+   AttachGateway:
+       Type: AWS::EC2::VPCGatewayAttachment
+       Properties:
+          VpcId: !Ref InitialiseVPC
+          InternetGatewayId: !Ref myInternetGateway
+
+   PublicSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties: 
+             VpcId: !Ref InitialiseVPC
+             AvailabilityZone: "eu-west-1a"
+             CidrBlock: 10.0.1.0/24
+             MapPublicIpOnLaunch: true
+
+   PublicSubnet2:
+      Type: AWS::EC2::Subnet
+      Properties: 
+            VpcId: !Ref InitialiseVPC
+            AvailabilityZone: "eu-west-1a"
+            CidrBlock: 10.0.2.0/24
+            MapPublicIpOnLaunch: true
+
+          
+   PrivateSubnet1:
+      Type: AWS::EC2::Subnet
+      Properties: 
+            VpcId: !Ref InitialiseVPC
+            AvailabilityZone: "eu-west-1b"
+            CidrBlock: 10.0.11.0/24
+            MapPublicIpOnLaunch: false 
+
+   PrivateSubnet2:
+      Type: AWS::EC2::Subnet
+      Properties: 
+            VpcId: !Ref InitialiseVPC
+            AvailabilityZone: "eu-west-1b"
+            CidrBlock: 10.0.12.0/24
+            MapPublicIpOnLaunch: false
+            
+
+   myrouteTableId: 
+     Type: AWS::EC2::RouteTable
+     Properties:
+         VpcId: !Ref InitialiseVPC
+
+   
+   myRoute:
+      Type: AWS::EC2::Route
+      DependsOn: AttachGateway
+      Properties:
+        RouteTableId: !Ref myrouteTableId
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref myInternetGateway
+                       
+   webappSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+       GroupDescription: Enable HTTP from 0.0.0.0/0
+       VpcId: !Ref InitialiseVPC
+       SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+       SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+    
+
+
+   PublicEC2Instance1:
+        Type: AWS::EC2::Instance
+        DependsOn: 
+              - myRoute
+        Properties: 
+            ImageId: ami-046a9f26a7f14326b
+            InstanceType: t2.micro
+            SubnetId: !Ref PublicSubnet1
+            SecurityGroupIds:
+                  - !Ref webappSecurityGroup
+
+            UserData:
+              Fn::Base64: |
+
+                 #!/bin/bash
+                 <!DOCTYPE html>
+                 <html>
+                 <head>
+                 <title>Text Box Example</title>
+                 </head>
+                 <body>
+                 <label for="textbox">Enter Text:</label>
+                 <input type="text" id="textbox" name="textbox">
+                 </body>
+                 </html>
+
+   PrivateEC2Instance1:
+        Type: AWS::EC2::Instance
+        DependsOn: 
+              - myRoute
+        Properties: 
+            ImageId: ami-046a9f26a7f14326b
+            InstanceType: t2.micro
+            SubnetId: !Ref PrivateSubnet1
+
+   PrivateMasterDatabaseInstance:
+        Type: AWS::RDS::DBInstance
+        Properties:
+             AvailabilityZone: "eu-west-1b"
+             DBInstanceClass: !Ref dbInstanceClass
+             AllocatedStorage: !Ref DBAllocatedStorage
+             Engine: MySQL
+             MasterUsername: !Ref DBUsername
+             MasterUserPassword: !Ref DBPassword
+             PubliclyAccessible: false
+
+   PublicDatabaseReplica:
+        Type: AWS::RDS::DBInstance
+        Condition: EnvironmentIsProduction
+        Properties: 
+            SourceDBInstanceIdentifier: !Ref  PrivateMasterDatabaseInstance
+            DBInstanceClass: !Ref dbInstanceClass
+            Engine: MySQL
+            PubliclyAccessible: true
+            
+             
+
+            
+
+            
