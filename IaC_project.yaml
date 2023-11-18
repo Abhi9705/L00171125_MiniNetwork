@@ -234,7 +234,7 @@ Resources:
              Port: 9595
               
           
-   PublicDatabaseReplica:
+   PublicDatabaseReplicaInstance:
         Type: AWS::RDS::DBInstance
         Condition: EnvironmentIsProduction
         Properties: 
